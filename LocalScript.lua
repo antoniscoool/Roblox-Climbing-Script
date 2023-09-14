@@ -7,7 +7,7 @@ type Pair<T,S> = {first: T, second: S}
 local targetPoint: Vector3? = nil
 local targetNormal: Vector3? = nil
 
-local climbingDir: Vector3 = Vector3.zero
+--local climbingDir: Vector3 = Vector3.one
 
 -- boolean pair that is used to keep track of the current player status, e.g. if the player is climbing, some other
 -- parts in the code get disabled so prevent "interventions"
@@ -124,7 +124,7 @@ do
 	local function _infoTimeFromNumber(dur: number): TweenInfo
 		return TweenInfo.new(dur,Enum.EasingStyle.Sine,Enum.EasingDirection.Out)
 	end
-
+	
 	function TweenCreation.create(dur: number): Tween
 		tweening = true
 		
@@ -133,6 +133,7 @@ do
 			{ ["CFrame"] = Utils.createTargetCFrame() } )
 		
 		t.Completed:Once(function(ps: Enum.PlaybackState)
+			--task.wait(0.5)
 			tweening = false
 		end)
 		
@@ -141,8 +142,23 @@ do
 
 end
 
+
+
+
 local Raycasts = {}
 do
+	
+	local cubes: {Part} = table.create(2, (function(): Part
+		local out = Instance.new("Part")
+		out.Anchored = true
+		out.CanCollide = false
+		out.BrickColor = BrickColor.random()
+		out.Parent = workspace
+		
+		return out
+	end)()
+	)
+	
 	function Raycasts.topDownCast(off: Vector3, len: number): (Vector3, Vector3, RaycastParams)
 		
 		return MathUtils.rotatePointAroundPlayer(off),
@@ -169,6 +185,15 @@ do
 			hrp.CFrame.RightVector * len,
 			RaycastFilters.default
 	end
+	
+	function Raycasts.visualizeRay(o: Vector3, dir: Vector3, i: number)
+		
+		local towards_point: Vector3 =  o + dir
+		local distance: number = (o - towards_point).Magnitude
+		
+		cubes[i].Size = Vector3.new(0.1,0.1,distance)
+		cubes[i].CFrame = CFrame.new(o, towards_point) * CFrame.new(0, 0, -distance / 2)
+	end
 end
 
 
@@ -180,32 +205,41 @@ do
 	type CheckInfo = Pair<Vector3, number>
 	type RaycastFunc = (off: Vector3, len: number, y: number) -> (Vector3, Vector3, RaycastParams)
 	
+	local function _calc_climbXDir(): number
+		return uis:IsKeyDown(Enum.KeyCode.A) and -1 or (uis:IsKeyDown(Enum.KeyCode.D) and 1 or 0 )
+	end
+	
+	local climbDir: number = 0
+	
 	local function _target_fromRays(y_info: CheckInfo, xz_info: CheckInfo, ortho: boolean, player_dir_logic: RaycastFunc): (Vector3?, Vector3?)
 		
-		
+		local x_off: Vector3 = Vector3.new(climbDir,1,1)
 		
 		local function __adjustForPlayerModel(tp: Vector3, xz_dir: Vector3): Vector3
-			print(xz_dir)
-			return (tp - xz_dir * 0.4) - Vector3.new(0,2)
+			return (tp + xz_dir * 0.4) - Vector3.new(0,2)
 		end
 		
 		
-		
-		
-		local y_check: RaycastResult? = workspace:Raycast(Raycasts.topDownCast(y_info.first, y_info.second))
+		local y_check: RaycastResult? = workspace:Raycast(Raycasts.topDownCast(y_info.first * x_off, y_info.second))
 		
 		if y_check then
 			
-			local xz_check: RaycastResult? = workspace:Raycast(player_dir_logic(xz_info.first, 
-				xz_info.second,
+			local xz_check: RaycastResult? = workspace:Raycast(player_dir_logic(xz_info.first * x_off, 
+				xz_info.second * (ortho and climbDir or 1),
 				y_check.Position.Y - Constants.LEDGE_Y_THRESHOLD))
+			
+			Raycasts.visualizeRay(
+				MathUtils.rotatePointAroundPlayer(xz_info.first),
+				hrp.CFrame.RightVector * xz_info.second,
+				1
+			)
 			
 			if xz_check then
 				
 				local out_tp: Vector3 = Vector3.new(xz_check.Position.X, y_check.Position.Y, xz_check.Position.Z)
 				local out_tn: Vector3 = Vector3.new(0, math.atan2(xz_check.Normal.X, xz_check.Normal.Z), 0)
 				
-				return __adjustForPlayerModel(out_tp, ortho and hrp.CFrame.RightVector or hrp.CFrame.LookVector), out_tn
+				return __adjustForPlayerModel(out_tp, xz_check.Normal), out_tn
 			end
 			return nil, nil
 		end
@@ -217,29 +251,44 @@ do
 	local checkInfoLookUp: {[string]: CheckStruct} = {
 		
 		["init"] = {
-			y = 	{ first = Vector3.new(0,7,-0.6), 	second = -6 }, 
-			xz = 	{ first = Vector3.zero, 			second = 1 },
+			y = 	{ first = Vector3.new(0,7,-0.9), 	second = -6 }, 
+			xz = 	{ first = Vector3.zero, 			second = 1  },
 			ortho = false
 		},
 		
 		["sideways1"] = {
-			y = 	{ first = Vector3.new(2,2.5,-0.5), 	second = -1 }, 
-			xz = 	{ first = Vector3.new(1.5,0,-0.5),	second = 1 },
+			y = 	{ first = Vector3.new(1.9,2.5,0), 	second = -1 }, 
+			xz = 	{ first = Vector3.zero,				second = 2.5},
+			ortho = true
+		},
+		
+		["sideways2"] = {
+			y = 	{ first = Vector3.new(1.5,2.5,-0.7),second = -1 }, 
+			xz = 	{ first = Vector3.new(1.5,0,0),		second = 1  },
 			ortho = false
+		},
+		
+		["sideways3"] = {
+			y = 	{ first = Vector3.new(0,2.5,-0.7), 	second = -1  }, 
+			xz = 	{ first = Vector3.new(2.5,0,-0.7),	second = -2.5},
+			ortho = true
 		}
 		
 	}
 	
-	local function _updateClimbingStuff(key: string, tween_dur: number, extra_f: (() -> ())? )
+	local function _updateClimbingStuff(key: string, tween_dur: number, extra_f: (() -> ())? ): boolean
 		
 		local checkInfo: CheckStruct = checkInfoLookUp[key]
 		
-		targetPoint, targetNormal = _target_fromRays(checkInfo.y, checkInfo.xz, checkInfo.dir, Raycasts.playerDirCast)
+		targetPoint, targetNormal = _target_fromRays(checkInfo.y, checkInfo.xz, checkInfo.ortho, checkInfo.ortho and Raycasts.playerOrthoCast or Raycasts.playerDirCast)
 		
 		if targetPoint and targetNormal then
 			if extra_f then extra_f() end
 			TweenCreation.create(tween_dur):Play()
+			return true
 		end
+		
+		return false
 	end
 	
 	function ClimbingFunctions.init()
@@ -248,27 +297,35 @@ do
 			hrp.Anchored = true
 			hrp.AssemblyLinearVelocity = Vector3.zero
 			hrp.AssemblyAngularVelocity = Vector3.zero
+			hum.AutoRotate = false
 			climbing = true
 		end)
 	end
 	
 	function ClimbingFunctions.cancel()
 		hrp.Anchored = false
+		hum.AutoRotate = true
 		climbing = false
 	end
 	
 	function ClimbingFunctions.moveAlongLedge()
 		
+		climbDir = _calc_climbXDir()
+		
+		--_updateClimbingStuff("sideways1",0.2)
+		for i=1, 3, 1 do
+			if _updateClimbingStuff("sideways"..i, 0.2) then
+				break
+			end
+		end
+		
 	end
 end
+
 
 local KeyEvents: {[Enum.KeyCode]: () -> ()} = {
 	[Enum.KeyCode.Space] = ClimbingFunctions.init,
 	[Enum.KeyCode.C] = ClimbingFunctions.cancel
-}
-
-local KeyEventsRealtime: {[Enum.KeyCode]: () -> ()} = {
-	
 }
 
 uis.InputBegan:Connect(function(inp: InputObject, gpe: boolean)
@@ -282,6 +339,18 @@ end)
 
 runService.Heartbeat:Connect(function(dt: number)
 	
-	workspace.Part.Position = Utils.elementFromTuple(1, Raycasts.topDownCast(Vector3.new(0,2,-0.5), -6))
+	--climbingDir = Vector3.zero
+	
+	if climbing and not tweening then
+		
+		if uis:IsKeyDown(Enum.KeyCode.W) or
+			uis:IsKeyDown(Enum.KeyCode.S) or
+			uis:IsKeyDown(Enum.KeyCode.A) or
+			uis:IsKeyDown(Enum.KeyCode.D)
+		then
+			ClimbingFunctions.moveAlongLedge()
+		end
+		
+	end
 	
 end)
