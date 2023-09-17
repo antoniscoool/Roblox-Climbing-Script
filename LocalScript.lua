@@ -21,7 +21,7 @@ local Constants = {
 	LEDGE_Y_THRESHOLD = 0.1
 }
 
-
+local tweenValue: CFrameValue = Instance.new("CFrameValue")
 
 
 -- Shorthand writing for the different raycast parameters. Created because all the parameters follow pretty much the
@@ -128,9 +128,9 @@ do
 	function TweenCreation.create(dur: number): Tween
 		tweening = true
 		
-		local t: Tween = tweenService:Create(hrp :: Instance, 
+		local t: Tween = tweenService:Create(tweenValue, 
 			_infoTimeFromNumber(dur), 
-			{ ["CFrame"] = Utils.createTargetCFrame() } )
+			{ ["Value"] = Utils.createTargetCFrame() } )
 		
 		t.Completed:Once(function(ps: Enum.PlaybackState)
 			--task.wait(0.5)
@@ -256,20 +256,24 @@ do
 			ortho = false
 		},
 		
+		["vertical1"] = {
+			
+		},
+		
 		["sideways1"] = {
-			y = 	{ first = Vector3.new(1.9,2.5,0), 	second = -1 }, 
+			y = 	{ first = Vector3.new(1.9,3,0), 	second = -2 }, 
 			xz = 	{ first = Vector3.zero,				second = 2.5},
 			ortho = true
 		},
 		
 		["sideways2"] = {
-			y = 	{ first = Vector3.new(1.5,2.5,-0.7),second = -1 }, 
+			y = 	{ first = Vector3.new(1.5,3,-0.7),	second = -2 }, 
 			xz = 	{ first = Vector3.new(1.5,0,0),		second = 1  },
 			ortho = false
 		},
 		
 		["sideways3"] = {
-			y = 	{ first = Vector3.new(0,2.5,-0.7), 	second = -1  }, 
+			y = 	{ first = Vector3.new(0,3,-0.7), 	second = -2  }, 
 			xz = 	{ first = Vector3.new(2.5,0,-0.7),	second = -2.5},
 			ortho = true
 		}
@@ -294,6 +298,9 @@ do
 	function ClimbingFunctions.init()
 		
 		_updateClimbingStuff("init", 0.33, function()
+			
+			tweenValue.Value = hrp.CFrame
+			
 			hrp.Anchored = true
 			hrp.AssemblyLinearVelocity = Vector3.zero
 			hrp.AssemblyAngularVelocity = Vector3.zero
@@ -303,6 +310,8 @@ do
 	end
 	
 	function ClimbingFunctions.cancel()
+		if tweening then return end
+		
 		hrp.Anchored = false
 		hum.AutoRotate = true
 		climbing = false
@@ -318,7 +327,11 @@ do
 				break
 			end
 		end
+	end
+	
+	function ClimbingFunctions.moveVertically()
 		
+		climbDir = _calc_climbXDir()
 	end
 end
 
@@ -333,14 +346,22 @@ uis.InputBegan:Connect(function(inp: InputObject, gpe: boolean)
 	local key: Enum.KeyCode = inp.KeyCode
 	
 	local evt: (() -> ())? = KeyEvents[key]
-	if evt then evt() end
+	if evt and not tweening then evt() end
+	
+end)
+
+
+runService.PreSimulation:Connect(function(dt: number)
+	if climbing then
+		hrp.CFrame = tweenValue.Value
+	end
+end)
+
+runService.PostSimulation:Connect(function(dt: number)
 	
 end)
 
 runService.Heartbeat:Connect(function(dt: number)
-	
-	--climbingDir = Vector3.zero
-	
 	if climbing and not tweening then
 		
 		if uis:IsKeyDown(Enum.KeyCode.W) or
@@ -350,7 +371,5 @@ runService.Heartbeat:Connect(function(dt: number)
 		then
 			ClimbingFunctions.moveAlongLedge()
 		end
-		
 	end
-	
 end)
