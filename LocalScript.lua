@@ -5,7 +5,6 @@ type Pair<T,S> = {first: T, second: S}
 
 local targetPoint: Vector3? = nil
 local targetNormal: Vector3? = nil
-local targetObject: Part? = nil
 
 
 local climbing: boolean = false
@@ -24,7 +23,11 @@ local Constants = {
 	LEDGE_Y_THRESHOLD = 0.1
 }
 
+
+
+
 local tweenValue: CFrameValue = Instance.new("CFrameValue")
+
 
 
 local function createRaycastParam(...: Instance): RaycastParams
@@ -53,7 +56,30 @@ local tweenService: TweenService = game:GetService("TweenService")
 local char: Model?
 local hrp: Part
 local hum: Humanoid
-local weld: Weld
+
+
+
+
+local handle: Part = Instance.new("Part", workspace)
+handle.Name = "sex"
+handle.CanCollide = false
+handle.Size = Vector3.one
+handle.Transparency = 1
+
+local player_pos: Part = Instance.new("Part", workspace)
+player_pos.Name = "player_pos_templ"
+player_pos.CanCollide = false
+player_pos.Size = Vector3.one
+
+local weld: Weld = Instance.new("Weld", handle)
+weld.Name = "handle"
+weld.Part1 = handle
+
+local weld2: Weld = Instance.new("Weld", handle)
+weld2.Name = "player_handle"
+weld2.Part0 = handle
+weld2.Part1 = player_pos
+weld2.Enabled = false
 
 
 
@@ -62,10 +88,6 @@ player.CharacterAdded:Connect(function(c: Model)
 	char = c
 	hrp = (char and char:WaitForChild("HumanoidRootPart")) :: Part
 	hum = (char and char:WaitForChild("Humanoid")) :: Humanoid
-	
-	weld = Instance.new("Weld", hrp)
-	weld.Name = "ClimbObjAttachment"
-	weld.Part0 = hrp
 end)
 repeat wait() until hrp ~= nil
 
@@ -87,6 +109,21 @@ do
 		
 		return CFrame.new(targetPoint) * CFrame.Angles(targetNormal.X, targetNormal.Y, targetNormal.Z)
 	end
+	
+end
+
+
+
+local Test = {}
+do
+	
+	function Test.setWeldedPartCFrameAndPart1()
+		
+		assert(weld.Part1 and weld.Part0)
+		
+		weld.C0 = weld.Part0.CFrame:ToObjectSpace( Utils.createTargetCFrame() )
+	end
+	
 end
 
 
@@ -132,7 +169,21 @@ do
 			_infoTimeFromNumber(dur), 
 			{ ["Value"] = Utils.createTargetCFrame() } )
 		
-		t.Completed:Once(function(ps: Enum.PlaybackState)
+		t.Completed:Once(function()
+			tweening = false
+		end)
+		
+		return t
+	end
+	
+	function TweenCreation.createForHandle(dur: number): Tween
+		tweening = true
+		
+		local t: Tween = tweenService:Create(handle:FindFirstChild("player_handle"),
+			_infoTimeFromNumber(dur),
+			{ ["C0"] = CFrame.identity }
+		)
+		t.Completed:Once(function()
 			tweening = false
 		end)
 		
@@ -148,13 +199,13 @@ local Raycasts = {}
 do
 	
 	local cubes: {Part} = table.create(2, (function(): Part
-		local out = Instance.new("Part", workspace)
-		out.Anchored = true
-		out.CanCollide = false
-		out.BrickColor = BrickColor.random()
-		
-		return out
-	end)()
+			local out = Instance.new("Part", workspace)
+			out.Anchored = true
+			out.CanCollide = false
+			out.BrickColor = BrickColor.random()
+			
+			return out
+		end)()
 	)
 	
 	function Raycasts.topDownCast(off: Vector3, len: number, y: number): (Vector3, Vector3, RaycastParams)
@@ -224,15 +275,11 @@ do
 		return uis:IsKeyDown(Enum.KeyCode.A) and -1 or (uis:IsKeyDown(Enum.KeyCode.D) and 1 or 0 )
 	end
 	
-	local function _calc_wedgeCFrame(): CFrame
-		-- TODO: implement sth here
-		return CFrame.identity
-	end
 	
 	local climbDir: number = 0
 	
 	
-	local function _target_fromRays(y_info: CheckInfo, xz_info: CheckInfo, ortho: boolean, player_dir_logic: RaycastFunc): (Vector3?, Vector3?, Part?)
+	local function _target_fromRays(y_info: CheckInfo, xz_info: CheckInfo, ortho: boolean, player_dir_logic: RaycastFunc): (Vector3?, Vector3?)
 		
 		local x_off: Vector3 = Vector3.new(climbDir,1,1)
 		
@@ -250,14 +297,19 @@ do
 			
 			if xz_check then
 				
+				local old_tp = targetPoint or hrp.Position
+				local old_tn = targetNormal or MathUtils.vec3_rad(hrp.Orientation)
+				
 				local out_tp: Vector3 = Vector3.new(xz_check.Position.X, y_check.Position.Y, xz_check.Position.Z)
 				local out_tn: Vector3 = Vector3.new(0, math.atan2(xz_check.Normal.X, xz_check.Normal.Z), 0)
 				
-				return __adjustForPlayerModel(out_tp, xz_check.Normal), out_tn, xz_check.Instance
+				weld.Part0 = xz_check.Instance
+				
+				return __adjustForPlayerModel(out_tp, xz_check.Normal), out_tn
 			end
-			return nil, nil, nil
+			return nil, nil
 		end
-		return nil, nil, nil
+		return nil, nil
 	end
 	
 	local checkInfoLookUp: {[string]: CheckStruct} = {
@@ -292,11 +344,20 @@ do
 		
 		local checkInfo: CheckStruct = checkInfoLookUp[key]
 		
-		targetPoint, targetNormal, targetObject = _target_fromRays(checkInfo.y, checkInfo.xz, checkInfo.ortho, checkInfo.ortho and Raycasts.playerOrthoCast or Raycasts.playerDirCast)
+		targetPoint, targetNormal = _target_fromRays(checkInfo.y, checkInfo.xz, checkInfo.ortho, checkInfo.ortho and Raycasts.playerOrthoCast or Raycasts.playerDirCast)
 		
 		if targetPoint and targetNormal then
+			
+			Test.setWeldedPartCFrameAndPart1()
+			weld2.C0 = handle.CFrame:ToObjectSpace(hrp.CFrame)
+			
+			print(weld2.C0)
+			
 			if extra_f then extra_f() end
-			TweenCreation.create(tween_dur):Play()
+			weld2.Enabled = true
+			
+			TweenCreation.createForHandle(tween_dur):Play()
+			--TweenCreation.create(tween_dur):Play()
 			return true
 		end
 		
@@ -313,12 +374,15 @@ do
 			hrp.AssemblyLinearVelocity = Vector3.zero
 			hrp.AssemblyAngularVelocity = Vector3.zero
 			hum.AutoRotate = false
+			
 			climbing = true
 		end)
 	end
 	
 	function ClimbingFunctions.cancel()
 		if tweening then return end
+		
+		weld2.Enabled = false
 		
 		hrp.Anchored = false
 		hum.AutoRotate = true
@@ -337,6 +401,8 @@ do
 	end
 	
 	function ClimbingFunctions.moveVertically()
+		
+		--TODO: Implement vertical climbing (grabbing ledges that are above/below you)
 		
 		climbDir = _calc_climbXDir()
 		
@@ -374,7 +440,6 @@ runService.PreSimulation:Connect(function(dt: number)
 			end
 		end
 		
-		local final_cf: CFrame = tweenValue.Value
-		hrp.CFrame = final_cf
+		hrp.CFrame = player_pos.CFrame
 	end
 end)
